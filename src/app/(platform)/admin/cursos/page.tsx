@@ -20,10 +20,10 @@ export default async function AdminCoursesPage() {
         </div>
         
         {/* TODO: Pasar a 'use client' si queremos abrir un modal real o hacer un form simple */}
-        <button className="bg-purple-600 hover:bg-purple-500 text-white font-medium py-3 px-6 rounded-xl flex items-center gap-2 transition-colors">
+        <Link href="/admin/cursos/nuevo" className="bg-purple-600 hover:bg-purple-500 text-white font-medium py-3 px-6 rounded-xl flex items-center gap-2 transition-colors">
           <Plus className="w-5 h-5" />
           Crear Nuevo Curso
-        </button>
+        </Link>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">

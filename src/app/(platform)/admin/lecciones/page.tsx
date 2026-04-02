@@ -20,7 +20,7 @@ export default async function AdminLessonsPage({ searchParams }: { searchParams:
   if (activeCourseId) {
     activeLessons = await db.query.lessons.findMany({
       where: eq(lessons.courseId, activeCourseId),
-      orderBy: [asc(lessons.orderIndex)],
+      orderBy: [asc(lessons.order)],
     });
   }
 

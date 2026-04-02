@@ -38,6 +38,7 @@ export const courses = pgTable('courses', {
   thumbnailUrl: text('thumbnail_url'), // Ruta WebP en MEGA S4
   price: decimal('price', { precision: 10, scale: 2 }).notNull().default('0'),
   isPublished: boolean('is_published').notNull().default(false),
+  checkoutUrl: text('checkout_url'), // Vínculo a Hotmart o similar para que puedan comprar realmente
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });

@@ -3,7 +3,7 @@ import { courses, lessons } from '@/db/schema';
 import { eq, asc } from 'drizzle-orm';
 import { notFound } from 'next/navigation';
 import Image from 'next/image';
-import { Play, CheckCircle2, ShieldCore } from 'lucide-react';
+import { Play, CheckCircle2, Shield } from 'lucide-react';
 import { InterestButton } from '@/components/marketing/InterestButton';
 import Link from 'next/link';
 
@@ -30,7 +30,7 @@ export default async function CourseDetailPage({ params }: { params: { id: strin
   // Cargar las lecciones para el bloque de temario
   const courseLessons = await db.query.lessons.findMany({
     where: eq(lessons.courseId, course.id),
-    orderBy: [asc(lessons.orderIndex)],
+    orderBy: [asc(lessons.order)],
   });
 
   // TODO: Generar JSON-LD estructurado de SEO
@@ -62,7 +62,7 @@ export default async function CourseDetailPage({ params }: { params: { id: strin
         <div className="max-w-7xl mx-auto px-6 lg:px-8 grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
           <div>
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-purple-500/10 border border-purple-500/20 text-xs font-bold uppercase tracking-widest text-purple-400 mb-6">
-              <ShieldCore className="w-4 h-4" />
+              <Shield className="w-4 h-4" />
               Curso 100% Protegido
             </div>
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight mb-6 text-white leading-tight">

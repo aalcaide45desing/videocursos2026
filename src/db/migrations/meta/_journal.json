@@ -15,6 +15,13 @@
       "when": 1775130336243,
       "tag": "0001_condemned_hitman",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1775133705204,
+      "tag": "0002_dear_shinko_yamashiro",
+      "breakpoints": true
     }
   ]
 }
