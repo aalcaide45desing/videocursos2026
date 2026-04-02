@@ -20,6 +20,9 @@ export const users = pgTable('users', {
   lastName: text('last_name'),
   avatarUrl: text('avatar_url'),
   isSuspended: boolean('is_suspended').notNull().default(false),
+  // Columnas para rate limiting anti-pirateria
+  manifestRequestsCount: integer('manifest_requests_count').notNull().default(0),
+  manifestRequestsLastReset: timestamp('manifest_requests_last_reset'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });

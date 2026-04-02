@@ -15,10 +15,35 @@ export async function GET(req: NextRequest) {
       return new NextResponse('Lesson ID is required', { status: 400 });
     }
 
-    // 2. Verificar que el usuario no está suspendido
+    // 2. Rate Limiting Anti-Piratería y Verificación
     const [user] = await db.select().from(users).where(eq(users.id, userId));
     if (!user || user.isSuspended) {
       return new NextResponse('Account suspended due to unusual activity', { status: 403 });
+    }
+
+    // Ventana de 5 minutos, máximo 50 peticiones (un usuario normal hace ~2 por vídeo)
+    const now = new Date();
+    const RESET_WINDOW_MS = 5 * 60 * 1000; 
+    const MAX_REQUESTS = 50;
+
+    let newCount = user.manifestRequestsCount + 1;
+    let newReset = user.manifestRequestsLastReset;
+
+    if (!newReset || (now.getTime() - newReset.getTime()) > RESET_WINDOW_MS) {
+      newCount = 1;
+      newReset = now;
+    }
+
+    if (newCount > MAX_REQUESTS) {
+      // ¡Pillado! Suspender cuenta instantáneamente a nivel de Base de Datos
+      await db.update(users).set({ isSuspended: true }).where(eq(users.id, userId));
+      console.warn(`[SECURITY] User ${userId} (${user.email}) SUSPENDED for rate limit violation.`);
+      return new NextResponse('Account permanently suspended for policy violation', { status: 403 });
+    } else {
+      // Actualizar contadores en background para no ralentizar la respuesta de video
+      db.update(users)
+        .set({ manifestRequestsCount: newCount, manifestRequestsLastReset: newReset })
+        .where(eq(users.id, userId)).execute();
     }
 
     // 3. Obtener la lección y comprobar el acceso al curso
