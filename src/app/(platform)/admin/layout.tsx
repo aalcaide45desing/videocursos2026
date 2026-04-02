@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import { isAdmin } from '@/lib/auth';
 import Link from 'next/link';
-import { LayoutDashboard, Video, Users, UserX, LogOut } from 'lucide-react';
+import { LayoutDashboard, Video, Users, LogOut, ListOrdered } from 'lucide-react';
 import { SignOutButton } from '@clerk/nextjs';
 
 export default async function AdminLayout({
@@ -31,18 +31,22 @@ export default async function AdminLayout({
           </span>
         </div>
         
-        <nav className="flex-1 p-4 space-y-2">
+        <nav className="flex-1 p-4 space-y-1">
           <Link href="/admin" className="flex items-center gap-3 px-4 py-3 text-gray-300 hover:text-white hover:bg-gray-800 rounded-xl transition-all">
             <LayoutDashboard className="w-5 h-5 text-blue-400" />
             <span className="font-medium">Dashboard</span>
           </Link>
           <Link href="/admin/cursos" className="flex items-center gap-3 px-4 py-3 text-gray-300 hover:text-white hover:bg-gray-800 rounded-xl transition-all">
             <Video className="w-5 h-5 text-purple-400" />
-            <span className="font-medium">Cursos & Lecciones</span>
+            <span className="font-medium">Cursos</span>
+          </Link>
+          <Link href="/admin/lecciones" className="flex items-center gap-3 px-4 py-3 text-gray-300 hover:text-white hover:bg-gray-800 rounded-xl transition-all">
+            <ListOrdered className="w-5 h-5 text-blue-300" />
+            <span className="font-medium">Lecciones</span>
           </Link>
           <Link href="/admin/accesos" className="flex items-center gap-3 px-4 py-3 text-gray-300 hover:text-white hover:bg-gray-800 rounded-xl transition-all">
             <Users className="w-5 h-5 text-green-400" />
-            <span className="font-medium">Accesos Reales</span>
+            <span className="font-medium">Accesos y Seguridad</span>
           </Link>
         </nav>
 

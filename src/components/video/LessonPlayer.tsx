@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import '@vidstack/react/player/styles/default/theme.css';
 import '@vidstack/react/player/styles/default/layouts/video.css';
-import { MediaPlayer, MediaProvider, type MediaPlayerInstance, Track } from '@vidstack/react';
+import { MediaPlayer, MediaProvider, Poster, type MediaPlayerInstance, Track } from '@vidstack/react';
 import { defaultLayoutIcons, DefaultVideoLayout } from '@vidstack/react/player/layouts/default';
 import { useUser } from '@clerk/nextjs';
 
@@ -31,24 +31,31 @@ export function LessonPlayer({
 
   useEffect(() => {
     setMounted(true);
-  }, []);
+    // Establecer currentTime inicial tras montar si es necesario
+    if (initialLastPositionSecs > 0 && playerRef.current) {
+      playerRef.current.currentTime = initialLastPositionSecs;
+    }
+  }, [initialLastPositionSecs]);
 
-  const handleTimeUpdate = (e: { currentTime: number; duration: number }) => {
+  const handleTimeUpdate = (detail: any) => {
+    // Vidstack puede pasar un número directamente o { currentTime: number } dependiendo del evento
+    const currentTime = typeof detail === 'number' ? detail : detail?.currentTime ?? 0;
+
     // Si queremos habilitar "Notas al minuto", propagamos el tiempo actual hacia arriba
     if (onTimeUpdateCallback) {
-      onTimeUpdateCallback(e.currentTime);
+      onTimeUpdateCallback(currentTime);
     }
 
     // Sincronizar progreso a Neon cada 15 segundos reales
-    if (Math.abs(e.currentTime - lastSyncRef.current) > 15) {
-      lastSyncRef.current = e.currentTime;
+    if (Math.abs(currentTime - lastSyncRef.current) > 15) {
+      lastSyncRef.current = currentTime;
       fetch('/api/progress', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           lessonId,
-          lastPositionSeconds: Math.floor(e.currentTime),
-          completed: durationSeconds && e.currentTime >= durationSeconds * 0.9,
+          lastPositionSeconds: Math.floor(currentTime),
+          completed: durationSeconds ? currentTime >= durationSeconds * 0.9 : false,
         }),
       }).catch(console.error);
     }
@@ -88,12 +95,11 @@ export function LessonPlayer({
         src={`/api/video/manifest?lessonId=${lessonId}`}
         crossOrigin
         playsInline
-        currentTime={initialLastPositionSecs}
         onTimeUpdate={handleTimeUpdate}
         className="w-full h-full aspect-video"
       >
         <MediaProvider>
-          {thumbnailUrl && <poster src={thumbnailUrl} className="vds-poster" />}
+          {thumbnailUrl && <Poster src={thumbnailUrl} className="vds-poster flex items-center justify-center bg-black/50" />}
           
           {langSubtitles?.es && (
             <Track
