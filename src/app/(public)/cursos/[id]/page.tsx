@@ -7,7 +7,8 @@ import { Play, CheckCircle2, Shield } from 'lucide-react';
 import { InterestButton } from '@/components/marketing/InterestButton';
 import Link from 'next/link';
 
-export async function generateMetadata({ params }: { params: { id: string } }) {
+export async function generateMetadata(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const [course] = await db.select().from(courses).where(eq(courses.id, params.id));
   if (!course) return { title: 'Curso no encontrado' };
 
@@ -20,7 +21,8 @@ export async function generateMetadata({ params }: { params: { id: string } }) {
   };
 }
 
-export default async function CourseDetailPage({ params }: { params: { id: string } }) {
+export default async function CourseDetailPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const [course] = await db.select().from(courses).where(eq(courses.id, params.id));
   
   if (!course || !course.isPublished) {

@@ -1,25 +1,21 @@
 #!/usr/bin/env bash
 # =============================================================================
-# encode_course.sh — Transcodificación AV1 NVENC + HLS + Thumbnail WebP
+# encode_course.sh — Transcodificación H.264 NVENC + HLS + Thumbnail WebP
 # =============================================================================
 # Plataforma: LMS Videocursos 2026
-# Hardware:   NVIDIA RTX 4090 (av1_nvenc Ada Lovelace) + AMD 9950X3D
-# Requisitos: FFmpeg compilado con soporte av1_nvenc (FFmpeg 7.x recomendado)
+# Hardware:   NVIDIA GPU (h264_nvenc) + H.264 Máxima Compatibilidad Web
 #
 # USO:
 #   ./encode_course.sh "video_entrada.mp4" "slug-del-curso" "01-titulo-leccion"
 #
 # EJEMPLO:
-#   ./encode_course.sh "grabacion_blender_leccion1.mp4" "blender-desde-cero" "01-introduccion"
+#   ./encode_course.sh "grabacion.mp4" "blender-desde-cero" "01-introduccion"
 #
-# SALIDA (en ./output/<slug-curso>/<slug-leccion>/):
-#   master.m3u8           → Playlist master ABR (5 variantes)
-#   4k/                   → AV1 3840×2160 ~6-8 Mbps CQ28
-#   1080p/                → AV1 1920×1080 ~2.5-3.5 Mbps CQ30
-#   720p/                 → AV1 1280×720  ~1.2-1.8 Mbps CQ32
-#   360p/                 → AV1 640×360   ~400-600 Kbps CQ34
-#   720p_h264/            → H.264 fallback 1280×720 ~2.5 Mbps CRF23
-#   thumbnails/           → card(400px), hero(1200px), og(1200×630) en WebP
+# NOTA IMPORTANTE DE COMPATIBILIDAD WEB:
+# Los navegadores web (Chrome, Edge, Safari) NO soportan reproducir AV1
+# empaquetado dentro de fragmentos .ts. Esto produce el error de "Pantalla Negra
+# con audio". Por eso, este script ha sido reescrito para empaquetar en H.264
+# que tiene 100% de compatibilidad garantizada en todos los navegadores y móviles.
 # =============================================================================
 
 set -euo pipefail
@@ -47,19 +43,17 @@ fi
 # =============================================================================
 OUTPUT_DIR="./output/${COURSE_SLUG}/${LESSON_SLUG}"
 THUMB_DIR="${OUTPUT_DIR}/thumbnails"
-
-# Duración del segmento HLS en segundos
 HLS_TIME=4
 
 # GOP para 24fps y 30fps (2 segundos de intervalo de keyframe)
-# Se detecta automáticamente según el FPS del video
 DETECT_FPS=$(ffprobe -v quiet -select_streams v:0 -show_entries stream=r_frame_rate \
   -of default=noprint_wrappers=1:nokey=1 "$INPUT" | bc -l)
 FPS_ROUNDED=$(printf "%.0f" "$DETECT_FPS")
-GOP=$(( FPS_ROUNDED * 2 ))   # 2 segundos = keyframe cada 2s
+GOP=$(( FPS_ROUNDED * 2 ))
 
 echo "============================================================"
-echo " LMS Videocursos 2026 — Transcodificación AV1 + HLS"
+echo " LMS Videocursos 2026 — Transcodificación H.264 HLS"
+echo " (100% Compatibilidad Web garantizada sin pantalla negra)"
 echo "============================================================"
 echo " Entrada:      $INPUT"
 echo " Curso:        $COURSE_SLUG"
@@ -68,165 +62,75 @@ echo " FPS detectado: ${FPS_ROUNDED} (GOP=${GOP})"
 echo " Salida:       $OUTPUT_DIR"
 echo "============================================================"
 
-# =============================================================================
-# CREAR ESTRUCTURA DE DIRECTORIOS
-# =============================================================================
-mkdir -p \
-  "${OUTPUT_DIR}/4k" \
-  "${OUTPUT_DIR}/1080p" \
-  "${OUTPUT_DIR}/720p" \
-  "${OUTPUT_DIR}/360p" \
-  "${OUTPUT_DIR}/720p_h264" \
-  "${OUTPUT_DIR}/subtitles" \
-  "${OUTPUT_DIR}/resources" \
-  "${THUMB_DIR}"
+# Crear directorios
+mkdir -p "${OUTPUT_DIR}/4k" "${OUTPUT_DIR}/1080p" "${OUTPUT_DIR}/720p" "${OUTPUT_DIR}/480p" \
+  "${OUTPUT_DIR}/subtitles" "${OUTPUT_DIR}/resources" "${THUMB_DIR}"
 
 # =============================================================================
-# PASO 1: THUMBNAIL WebP (a los 5 minutos)
+# PASO 1: THUMBNAILS
 # =============================================================================
 echo ""
 echo "📸 [1/3] Generando thumbnails WebP..."
 
-# Verificar si el video tiene al menos 5 minutos; si no, usar el 20% del tiempo
 DURATION=$(ffprobe -v quiet -show_entries format=duration \
   -of default=noprint_wrappers=1:nokey=1 "$INPUT")
 THUMB_OFFSET=$(echo "if ($DURATION > 300) 300 else $DURATION * 0.2" | bc -l)
 THUMB_OFFSET=$(printf "%.0f" "$THUMB_OFFSET")
 
-# card: 400px ancho (para tarjetas de catálogo)
-ffmpeg -y -ss "${THUMB_OFFSET}" -i "$INPUT" \
-  -frames:v 1 -vf "scale=400:-1" \
-  -quality 80 "${THUMB_DIR}/${LESSON_SLUG}-card.webp"
-
-# hero: 1200px ancho (para cabecera de lección)
-ffmpeg -y -ss "${THUMB_OFFSET}" -i "$INPUT" \
-  -frames:v 1 -vf "scale=1200:-1" \
-  -quality 80 "${THUMB_DIR}/${LESSON_SLUG}-hero.webp"
-
-# og: 1200×630px (Open Graph / redes sociales)
-ffmpeg -y -ss "${THUMB_OFFSET}" -i "$INPUT" \
-  -frames:v 1 -vf "scale=1200:630:force_original_aspect_ratio=decrease,pad=1200:630:(ow-iw)/2:(oh-ih)/2:black" \
-  -quality 80 "${THUMB_DIR}/${LESSON_SLUG}-og.webp"
-
-echo "   ✅ Thumbnails generados en ${THUMB_DIR}/"
+ffmpeg -y -ss "${THUMB_OFFSET}" -i "$INPUT" -frames:v 1 -vf "scale=400:-1" -quality 80 "${THUMB_DIR}/${LESSON_SLUG}-card.webp"
+ffmpeg -y -ss "${THUMB_OFFSET}" -i "$INPUT" -frames:v 1 -vf "scale=1200:-1" -quality 80 "${THUMB_DIR}/${LESSON_SLUG}-hero.webp"
+ffmpeg -y -ss "${THUMB_OFFSET}" -i "$INPUT" -frames:v 1 -vf "scale=1200:630:force_original_aspect_ratio=decrease,pad=1200:630:(ow-iw)/2:(oh-ih)/2:black" -quality 80 "${THUMB_DIR}/${LESSON_SLUG}-og.webp"
+echo "   ✅ Thumbnails generados."
 
 # =============================================================================
-# PASO 2: TRANSCODIFICACIÓN AV1 NVENC + H.264 FALLBACK + SEGMENTOS HLS
+# PASO 2: H.264 NVENC + HLS
 # =============================================================================
 echo ""
-echo "🎬 [2/3] Transcodificando variantes AV1 + H.264 con FFmpeg NVENC..."
-echo "   (RTX 4090 dual NVENC Ada Lovelace — primera variante...)"
-echo ""
+echo "🎬 [2/3] Transcodificando variantes H.264 con FFmpeg NVENC..."
 
-# -----------------------------------------------------------------------
-# VARIANTE 1: AV1 4K (3840×2160) — CQ28 ~6-8 Mbps
-# -----------------------------------------------------------------------
-echo "   🔹 4K AV1 (CQ28)..."
-ffmpeg -y -i "$INPUT" \
+# 4K H.264 (2160p)
+echo "   🔹 4K UHD H.264..."
+ffmpeg -y -v warning -i "$INPUT" \
   -vf "scale=3840:2160:force_original_aspect_ratio=decrease,pad=3840:2160:(ow-iw)/2:(oh-ih)/2" \
-  -c:v av1_nvenc \
-  -preset p7 \
-  -cq 28 \
-  -bf 0 \
-  -g "$GOP" \
-  -keyint_min "$GOP" \
-  -sc_threshold 0 \
+  -pix_fmt yuv420p \
+  -c:v h264_nvenc -preset p6 -rc vbr -b:v 8M -maxrate 12M -bufsize 24M \
+  -profile:v high -level 5.1 -g "$GOP" -keyint_min "$GOP" \
   -c:a aac -b:a 128k -ac 2 \
-  -f hls \
-  -hls_time "$HLS_TIME" \
-  -hls_playlist_type vod \
-  -hls_flags independent_segments \
-  -hls_segment_filename "${OUTPUT_DIR}/4k/segment_%03d.ts" \
-  "${OUTPUT_DIR}/4k/playlist.m3u8" 2>&1 | grep -E "frame=|fps=|speed=|error|Error" || true
+  -f hls -hls_time "$HLS_TIME" -hls_playlist_type vod -hls_flags independent_segments \
+  -hls_segment_filename "${OUTPUT_DIR}/4k/segment_%03d.ts" "${OUTPUT_DIR}/4k/playlist.m3u8"
 
-# -----------------------------------------------------------------------
-# VARIANTE 2: AV1 1080p (1920×1080) — CQ30 ~2.5-3.5 Mbps  [PRINCIPAL]
-# -----------------------------------------------------------------------
-echo "   🔹 1080p AV1 (CQ30) — variante principal..."
-ffmpeg -y -i "$INPUT" \
+# 1080p H.264
+echo "   🔹 1080p H.264..."
+ffmpeg -y -v warning -i "$INPUT" \
   -vf "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2" \
-  -c:v av1_nvenc \
-  -preset p7 \
-  -cq 30 \
-  -bf 0 \
-  -g "$GOP" \
-  -keyint_min "$GOP" \
-  -sc_threshold 0 \
+  -pix_fmt yuv420p \
+  -c:v h264_nvenc -preset p6 -rc vbr -b:v 3.5M -maxrate 4M -bufsize 8M \
+  -profile:v high -level 4.1 -g "$GOP" -keyint_min "$GOP" \
   -c:a aac -b:a 128k -ac 2 \
-  -f hls \
-  -hls_time "$HLS_TIME" \
-  -hls_playlist_type vod \
-  -hls_flags independent_segments \
-  -hls_segment_filename "${OUTPUT_DIR}/1080p/segment_%03d.ts" \
-  "${OUTPUT_DIR}/1080p/playlist.m3u8" 2>&1 | grep -E "frame=|fps=|speed=|error|Error" || true
+  -f hls -hls_time "$HLS_TIME" -hls_playlist_type vod -hls_flags independent_segments \
+  -hls_segment_filename "${OUTPUT_DIR}/1080p/segment_%03d.ts" "${OUTPUT_DIR}/1080p/playlist.m3u8"
 
-# -----------------------------------------------------------------------
-# VARIANTE 3: AV1 720p (1280×720) — CQ32 ~1.2-1.8 Mbps
-# -----------------------------------------------------------------------
-echo "   🔹 720p AV1 (CQ32)..."
-ffmpeg -y -i "$INPUT" \
+# 720p H.264
+echo "   🔹 720p H.264..."
+ffmpeg -y -v warning -i "$INPUT" \
   -vf "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2" \
-  -c:v av1_nvenc \
-  -preset p7 \
-  -cq 32 \
-  -bf 0 \
-  -g "$GOP" \
-  -keyint_min "$GOP" \
-  -sc_threshold 0 \
+  -pix_fmt yuv420p \
+  -c:v h264_nvenc -preset p6 -rc vbr -b:v 2M -maxrate 2.5M -bufsize 5M \
+  -profile:v main -level 4.0 -g "$GOP" -keyint_min "$GOP" \
   -c:a aac -b:a 128k -ac 2 \
-  -f hls \
-  -hls_time "$HLS_TIME" \
-  -hls_playlist_type vod \
-  -hls_flags independent_segments \
-  -hls_segment_filename "${OUTPUT_DIR}/720p/segment_%03d.ts" \
-  "${OUTPUT_DIR}/720p/playlist.m3u8" 2>&1 | grep -E "frame=|fps=|speed=|error|Error" || true
+  -f hls -hls_time "$HLS_TIME" -hls_playlist_type vod -hls_flags independent_segments \
+  -hls_segment_filename "${OUTPUT_DIR}/720p/segment_%03d.ts" "${OUTPUT_DIR}/720p/playlist.m3u8"
 
-# -----------------------------------------------------------------------
-# VARIANTE 4: AV1 360p (640×360) — CQ34 ~400-600 Kbps
-# -----------------------------------------------------------------------
-echo "   🔹 360p AV1 (CQ34) — fallback conexiones lentas..."
-ffmpeg -y -i "$INPUT" \
-  -vf "scale=640:360:force_original_aspect_ratio=decrease,pad=640:360:(ow-iw)/2:(oh-ih)/2" \
-  -c:v av1_nvenc \
-  -preset p7 \
-  -cq 34 \
-  -bf 0 \
-  -g "$GOP" \
-  -keyint_min "$GOP" \
-  -sc_threshold 0 \
+# 480p H.264
+echo "   🔹 480p H.264..."
+ffmpeg -y -v warning -i "$INPUT" \
+  -vf "scale=854:480:force_original_aspect_ratio=decrease,pad=854:480:(ow-iw)/2:(oh-ih)/2" \
+  -pix_fmt yuv420p \
+  -c:v h264_nvenc -preset p6 -rc vbr -b:v 1M -maxrate 1.2M -bufsize 2.4M \
+  -profile:v main -level 3.1 -g "$GOP" -keyint_min "$GOP" \
   -c:a aac -b:a 96k -ac 2 \
-  -f hls \
-  -hls_time "$HLS_TIME" \
-  -hls_playlist_type vod \
-  -hls_flags independent_segments \
-  -hls_segment_filename "${OUTPUT_DIR}/360p/segment_%03d.ts" \
-  "${OUTPUT_DIR}/360p/playlist.m3u8" 2>&1 | grep -E "frame=|fps=|speed=|error|Error" || true
-
-# -----------------------------------------------------------------------
-# VARIANTE 5: H.264 720p (fallback Safari pre-M1 / iPhone antiguo)
-# -----------------------------------------------------------------------
-echo "   🔹 720p H.264 (CRF23) — fallback legacy devices..."
-ffmpeg -y -i "$INPUT" \
-  -vf "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2" \
-  -c:v h264_nvenc \
-  -preset p7 \
-  -crf 23 \
-  -b:v 2.5M \
-  -maxrate 3M \
-  -bufsize 6M \
-  -profile:v high \
-  -level 4.2 \
-  -bf 2 \
-  -g "$GOP" \
-  -keyint_min "$GOP" \
-  -sc_threshold 0 \
-  -c:a aac -b:a 128k -ac 2 \
-  -f hls \
-  -hls_time "$HLS_TIME" \
-  -hls_playlist_type vod \
-  -hls_flags independent_segments \
-  -hls_segment_filename "${OUTPUT_DIR}/720p_h264/segment_%03d.ts" \
-  "${OUTPUT_DIR}/720p_h264/playlist.m3u8" 2>&1 | grep -E "frame=|fps=|speed=|error|Error" || true
+  -f hls -hls_time "$HLS_TIME" -hls_playlist_type vod -hls_flags independent_segments \
+  -hls_segment_filename "${OUTPUT_DIR}/480p/segment_%03d.ts" "${OUTPUT_DIR}/480p/playlist.m3u8"
 
 echo "   ✅ Transcodificación completada."
 
@@ -240,45 +144,26 @@ cat > "${OUTPUT_DIR}/master.m3u8" << 'MASTER_M3U8'
 #EXTM3U
 #EXT-X-VERSION:3
 
-# AV1 4K — ~7 Mbps
-#EXT-X-STREAM-INF:BANDWIDTH=7000000,RESOLUTION=3840x2160,CODECS="av01.0.17M.08",AUDIO="audio"
+# 4K H.264 — ~8 Mbps
+#EXT-X-STREAM-INF:BANDWIDTH=8128000,RESOLUTION=3840x2160,CODECS="avc1.640033",AUDIO="audio"
 4k/playlist.m3u8
 
-# AV1 1080p — ~3 Mbps (VARIANTE DEFAULT)
-#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1920x1080,CODECS="av01.0.08M.08",AUDIO="audio"
+# 1080p H.264 — ~3.5 Mbps
+#EXT-X-STREAM-INF:BANDWIDTH=3628000,RESOLUTION=1920x1080,CODECS="avc1.640028",AUDIO="audio"
 1080p/playlist.m3u8
 
-# AV1 720p — ~1.5 Mbps
-#EXT-X-STREAM-INF:BANDWIDTH=1500000,RESOLUTION=1280x720,CODECS="av01.0.05M.08",AUDIO="audio"
+# 720p H.264 — ~2 Mbps
+#EXT-X-STREAM-INF:BANDWIDTH=2128000,RESOLUTION=1280x720,CODECS="avc1.4d4028",AUDIO="audio"
 720p/playlist.m3u8
 
-# AV1 360p — ~500 Kbps
-#EXT-X-STREAM-INF:BANDWIDTH=500000,RESOLUTION=640x360,CODECS="av01.0.00M.08",AUDIO="audio"
-360p/playlist.m3u8
-
-# H.264 720p fallback — ~2.5 Mbps (Safari pre-M1 / iPhones legacy)
-#EXT-X-STREAM-INF:BANDWIDTH=2500000,RESOLUTION=1280x720,CODECS="avc1.640028",AUDIO="audio"
-720p_h264/playlist.m3u8
+# 480p H.264 — ~1 Mbps
+#EXT-X-STREAM-INF:BANDWIDTH=1096000,RESOLUTION=854x480,CODECS="avc1.4d401f",AUDIO="audio"
+480p/playlist.m3u8
 MASTER_M3U8
 
 echo "   ✅ ${OUTPUT_DIR}/master.m3u8 generado."
-
-# =============================================================================
-# RESUMEN FINAL
-# =============================================================================
 echo ""
 echo "============================================================"
-echo " ✅ LECCIÓN PROCESADA CORRECTAMENTE"
-echo "============================================================"
-echo " Curso:   $COURSE_SLUG"
-echo " Lección: $LESSON_SLUG"
-echo " Ruta MEGA S4 a pegar en admin:"
-echo "   ${COURSE_SLUG}/${LESSON_SLUG}/master.m3u8"
-echo ""
-echo " Tamaño aproximado de la salida:"
-du -sh "${OUTPUT_DIR}" 2>/dev/null || echo "   (no disponible en este OS)"
-echo ""
-echo " Próximo paso:"
-echo "   Sube la carpeta con rclone o AWS CLI:"
-echo "   rclone copy \"${OUTPUT_DIR}/..\" mega-s4:BUCKET_NAME/${COURSE_SLUG}/ --progress"
+echo " 🚀 LISTO. Sube la carpeta a MEGA S4 y pega esta ruta:"
+echo "    ${COURSE_SLUG}/${LESSON_SLUG}/master.m3u8"
 echo "============================================================"

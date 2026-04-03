@@ -66,6 +66,8 @@ export async function PATCH(req: NextRequest) {
 }
 
 // DELETE /api/admin/lessons?id=xxx
+
+
 export async function DELETE(req: NextRequest) {
   const admin = await isAdmin();
   if (!admin) return new NextResponse('Forbidden', { status: 403 });

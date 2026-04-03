@@ -49,6 +49,6 @@ export async function syncClerkUser(clerkUserId: string) {
  * (via Clerk publicMetadata.role).
  */
 export async function isAdmin(): Promise<boolean> {
-  const { sessionClaims } = await auth();
-  return (sessionClaims?.metadata as { role?: string })?.role === 'admin';
+  const user = await currentUser();
+  return user?.publicMetadata?.role === 'admin';
 }

@@ -1,7 +1,7 @@
 import { db } from '@/db';
 import { courses } from '@/db/schema';
 import { desc } from 'drizzle-orm';
-import { Video, Plus, Settings2, EyeOff } from 'lucide-react';
+import { Video, Plus, Settings2, EyeOff, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 
@@ -59,10 +59,14 @@ export default async function AdminCoursesPage() {
                     {course.price ? `${course.price} €` : 'Gratis'}
                   </span>
                   
-                  {/* TODO: Link a la vista de edición / form */}
-                  <Link href={`/admin/cursos/${course.id}`} className="p-2 text-gray-500 hover:text-white hover:bg-gray-800 rounded-lg transition-colors">
-                    <Settings2 className="w-5 h-5" />
-                  </Link>
+                  <div className="flex bg-gray-950 rounded-lg overflow-hidden border border-gray-800">
+                    <Link href={`/admin/cursos/${course.id}`} className="px-3 py-2 text-gray-500 hover:text-white hover:bg-gray-800 transition-colors border-r border-gray-800" title="Editar curso">
+                      <Settings2 className="w-4 h-4" />
+                    </Link>
+                    <Link href={`/cursos/${course.id}`} className="px-3 py-2 text-gray-500 hover:text-white hover:bg-gray-800 transition-colors" title="Ver como alumno">
+                      <ExternalLink className="w-4 h-4" />
+                    </Link>
+                  </div>
                 </div>
               </div>
             </div>

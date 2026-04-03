@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth } from '@/lib/auth';
+import { requireAuth, isAdmin } from '@/lib/auth';
 import { db } from '@/db';
 import { lessons, userCourseAccess, users } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
-import { generatePresignedUrl, getObjectText } from '@/lib/presigned';
+import { getObjectText } from '@/lib/presigned';
 
 export async function GET(req: NextRequest) {
   try {
-    // 1. Verificaciones de seguridad: Auth y Rate Limite (TODO Phase 5)
     const { userId } = await requireAuth();
     const lessonId = req.nextUrl.searchParams.get('lessonId');
 
@@ -15,100 +14,98 @@ export async function GET(req: NextRequest) {
       return new NextResponse('Lesson ID is required', { status: 400 });
     }
 
-    // 2. Rate Limiting Anti-Piratería y Verificación
+    // Auto-sincronizar usuario de Clerk con la BD si no existe aún
+    // (el webhook de Clerk puede no estar configurado en local)
+    const { syncClerkUser } = await import('@/lib/auth');
+    await syncClerkUser(userId);
+
+    // Volver a leer el usuario (ya existe tras el upsert)
     const [user] = await db.select().from(users).where(eq(users.id, userId));
     if (!user || user.isSuspended) {
-      return new NextResponse('Account suspended due to unusual activity', { status: 403 });
+      return new NextResponse('Account suspended', { status: 403 });
     }
 
-    // Ventana de 5 minutos, máximo 50 peticiones (un usuario normal hace ~2 por vídeo)
     const now = new Date();
-    const RESET_WINDOW_MS = 5 * 60 * 1000; 
+    const RESET_WINDOW_MS = 5 * 60 * 1000;
     const MAX_REQUESTS = 50;
-
     let newCount = user.manifestRequestsCount + 1;
     let newReset = user.manifestRequestsLastReset;
-
-    if (!newReset || (now.getTime() - newReset.getTime()) > RESET_WINDOW_MS) {
+    if (!newReset || now.getTime() - newReset.getTime() > RESET_WINDOW_MS) {
       newCount = 1;
       newReset = now;
     }
-
     if (newCount > MAX_REQUESTS) {
-      // ¡Pillado! Suspender cuenta instantáneamente a nivel de Base de Datos
       await db.update(users).set({ isSuspended: true }).where(eq(users.id, userId));
-      console.warn(`[SECURITY] User ${userId} (${user.email}) SUSPENDED for rate limit violation.`);
-      return new NextResponse('Account permanently suspended for policy violation', { status: 403 });
-    } else {
-      // Actualizar contadores en background para no ralentizar la respuesta de video
-      db.update(users)
-        .set({ manifestRequestsCount: newCount, manifestRequestsLastReset: newReset })
-        .where(eq(users.id, userId)).execute();
+      return new NextResponse('Rate limit exceeded', { status: 429 });
+    }
+    db.update(users)
+      .set({ manifestRequestsCount: newCount, manifestRequestsLastReset: newReset })
+      .where(eq(users.id, userId)).execute();
+
+    // Obtener lección
+    const [lesson] = await db.select().from(lessons).where(eq(lessons.id, lessonId));
+    if (!lesson) return new NextResponse('Lesson not found', { status: 404 });
+    if (!lesson.megaS4MasterPath) return new NextResponse('No video content', { status: 404 });
+
+    // Verificar acceso (admins pasan siempre)
+    const isUserAdmin = await isAdmin();
+    if (!lesson.isFree && !isUserAdmin) {
+      const [access] = await db.select().from(userCourseAccess).where(
+        and(eq(userCourseAccess.userId, userId), eq(userCourseAccess.courseId, lesson.courseId))
+      );
+      if (!access) return new NextResponse('No access', { status: 403 });
     }
 
-    // 3. Obtener la lección y comprobar el acceso al curso
-    const [lesson] = await db
-      .select()
-      .from(lessons)
-      .where(eq(lessons.id, lessonId));
+    // Descargar master.m3u8 con credenciales desde MEGA S4
+    const masterKey = lesson.megaS4MasterPath.replace(/^\/+/, '');
+    const masterContent = await getObjectText(masterKey);
 
-    if (!lesson) {
-      return new NextResponse('Lesson not found', { status: 404 });
-    }
+    // Calcular directorio base (para resolver rutas relativas de variantes)
+    const baseDir = masterKey.substring(0, masterKey.lastIndexOf('/') + 1);
 
-    // Comprobar que el usuario ha comprado el curso o que la lección es gratis
-    if (!lesson.isFree) {
-      const [access] = await db
-        .select()
-        .from(userCourseAccess)
-        .where(
-          and(
-            eq(userCourseAccess.userId, userId),
-            eq(userCourseAccess.courseId, lesson.courseId)
-          )
-        );
+    // URL base de nuestra app para construir URLs internas del proxy de playlists
+    const origin = req.nextUrl.origin; // ej: http://localhost:3000 o https://tudominio.com
 
-      if (!access) {
-        return new NextResponse('No access to this course', { status: 403 });
+    // Reescribir rutas de variantes y FILTRAR las problemáticas (AV1 en .ts da pantalla negra en Chrome)
+    const lines = masterContent.split('\n');
+    const rewrittenLines: string[] = [];
+    
+    let isSkipping = false;
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      
+      // Si la línea indica que es un stream AV1 (ej. CODECS="av01..."), nos saltamos esta y la siguiente (la URL)
+      if (trimmed.startsWith('#EXT-X-STREAM-INF') && trimmed.includes('av01')) {
+        isSkipping = true;
+        continue;
       }
+
+      if (isSkipping && !trimmed.startsWith('#')) {
+        // Esta es la URL del stream AV1, nos la saltamos y reseteamos la flag
+        isSkipping = false;
+        continue;
+      }
+
+      // Si no hay que saltarla
+      if (!trimmed || trimmed.startsWith('#')) {
+        rewrittenLines.push(line);
+        continue;
+      }
+
+      // Es una variante válida (H.264), calculamos su URL de proxy
+      const variantKey = trimmed.startsWith('http') ? trimmed : `${baseDir}${trimmed}`;
+      rewrittenLines.push(`${origin}/api/video/playlist?key=${encodeURIComponent(variantKey)}`);
     }
 
-    // 4. Si pasamos la seguridad, descargamos el manifest original desde MEGA S4 server-side
-    // El manifest es público/protegido a nivel carpeta en S3 pero evitamos que el user lo vea crudo.
-    if (!lesson.megaS4MasterPath) {
-      return new NextResponse('Video content not uploaded yet', { status: 404 });
-    }
+    const rewrittenMaster = rewrittenLines.join('\n');
 
-    const masterHls = await getObjectText(lesson.megaS4MasterPath);
-
-    // 5. Reescribimos el manifest. 
-    // Por cada variante (.m3u8 de resoluciones), generaremos una Presigned URL.
-    const basePath = lesson.megaS4MasterPath.substring(
-      0,
-      lesson.megaS4MasterPath.lastIndexOf('/') + 1
-    );
-
-    const lines = masterHls.split('\n');
-    const rewrittenLines = await Promise.all(
-      lines.map(async (line) => {
-        const trimmed = line.trim();
-        // Si no es un comentario ni está vacío, es una ruta de playlist (ej: "1080p/playlist.m3u8")
-        if (trimmed && !trimmed.startsWith('#')) {
-          const variantKey = `${basePath}${trimmed}`;
-          return await generatePresignedUrl(variantKey, 1800); // 30 mins (1800s) expiración para renovar
-        }
-        return line;
-      })
-    );
-
-    const newHlsContent = rewrittenLines.join('\n');
-
-    return new NextResponse(newHlsContent, {
+    return new NextResponse(rewrittenMaster, {
       status: 200,
       headers: {
         'Content-Type': 'application/vnd.apple.mpegurl',
-        // Evitamos que el navegador cachee el manifiesto protegido que expira rápido
         'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Access-Control-Allow-Origin': '*',
       },
     });
   } catch (error) {

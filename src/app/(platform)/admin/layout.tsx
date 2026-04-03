@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import { isAdmin } from '@/lib/auth';
 import Link from 'next/link';
-import { LayoutDashboard, Video, Users, LogOut, ListOrdered } from 'lucide-react';
+import { LayoutDashboard, Video, Users, LogOut, ListOrdered, ExternalLink } from 'lucide-react';
 import { SignOutButton } from '@clerk/nextjs';
 
 export default async function AdminLayout({
@@ -48,15 +48,19 @@ export default async function AdminLayout({
             <Users className="w-5 h-5 text-green-400" />
             <span className="font-medium">Accesos y Seguridad</span>
           </Link>
+          <div className="pt-4 mt-4 border-t border-gray-800">
+            <Link href="/" className="flex items-center gap-3 px-4 py-3 text-yellow-300 hover:text-yellow-200 hover:bg-yellow-900/20 rounded-xl transition-all">
+              <ExternalLink className="w-5 h-5" />
+              <span className="font-medium font-bold">Ver Academia</span>
+            </Link>
+          </div>
         </nav>
 
         <div className="p-4 border-t border-gray-800">
-          <SignOutButton>
-            <button className="flex w-full items-center gap-3 px-4 py-3 text-red-400 hover:text-red-300 hover:bg-red-950/30 rounded-xl transition-all">
-              <LogOut className="w-5 h-5" />
-              <span className="font-medium">Salir del panel</span>
-            </button>
-          </SignOutButton>
+          <div className="flex w-full items-center gap-3 px-4 py-3 text-red-500 hover:text-red-400 hover:bg-red-950/30 rounded-xl transition-all">
+            <LogOut className="w-5 h-5" />
+            <SignOutButton />
+          </div>
         </div>
       </aside>
 

@@ -2,9 +2,10 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ListVideo, GripVertical, Settings2, Plus, Trash2 } from 'lucide-react';
+import { ListVideo, GripVertical, Plus, Trash2, Pencil, Play } from 'lucide-react';
 import Link from 'next/link';
 import { AddLessonModal } from '@/components/admin/AddLessonModal';
+import { EditLessonModal } from '@/components/admin/EditLessonModal';
 
 interface Course {
   id: string;
@@ -30,9 +31,14 @@ export function AdminLessonsClient({ allCourses, activeCourseId, initialLessons 
   const router = useRouter();
   const [lessons, setLessons] = useState<Lesson[]>(initialLessons);
   const [showModal, setShowModal] = useState(false);
+  const [editingLesson, setEditingLesson] = useState<Lesson | null>(null);
 
   const handleLessonAdded = (lesson: Lesson) => {
     setLessons((prev) => [...prev, lesson].sort((a, b) => a.order - b.order));
+  };
+
+  const handleLessonUpdated = (updatedLesson: Lesson) => {
+    setLessons((prev) => prev.map((l) => l.id === updatedLesson.id ? updatedLesson : l));
   };
 
   const handleDelete = async (lessonId: string) => {
@@ -136,13 +142,29 @@ export function AdminLessonsClient({ allCourses, activeCourseId, initialLessons 
                         </div>
                       </div>
 
-                      <button
-                        onClick={() => handleDelete(lesson.id)}
-                        className="opacity-0 group-hover:opacity-100 p-2 text-gray-600 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all"
-                        title="Eliminar lección"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                        <Link
+                          href={`/play/${lesson.id}`}
+                          className="p-2 text-gray-600 hover:text-blue-400 hover:bg-blue-400/10 rounded-lg transition-colors"
+                          title="Ver lección"
+                        >
+                          <Play className="w-4 h-4" />
+                        </Link>
+                        <button
+                          onClick={() => setEditingLesson(lesson)}
+                          className="p-2 text-gray-600 hover:text-yellow-400 hover:bg-yellow-400/10 rounded-lg transition-colors"
+                          title="Editar lección"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(lesson.id)}
+                          className="p-2 text-gray-600 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
+                          title="Eliminar lección"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                   ))
                 )}
@@ -158,6 +180,14 @@ export function AdminLessonsClient({ allCourses, activeCourseId, initialLessons 
           nextOrder={lessons.length}
           onClose={() => setShowModal(false)}
           onAdded={handleLessonAdded}
+        />
+      )}
+
+      {editingLesson && (
+        <EditLessonModal
+          lesson={editingLesson}
+          onClose={() => setEditingLesson(null)}
+          onUpdated={handleLessonUpdated}
         />
       )}
     </div>
