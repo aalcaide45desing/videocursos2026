@@ -5,6 +5,7 @@ import { useUser } from '@clerk/nextjs';
 import { MessageSquare, Send, RefreshCcw } from 'lucide-react';
 import { formatRelativeDate } from '@/lib/utils';
 import Image from 'next/image';
+import { toast } from 'sonner';
 
 interface CommentType {
   id: string;
@@ -59,8 +60,9 @@ export function LessonComments({ lessonId }: { lessonId: string }) {
         const addedComment = await res.json();
         setComments((prev) => [addedComment, ...prev]);
         setNewComment('');
+        toast.success('Comentario publicado');
       } else {
-        alert('Error al publicar. Verifica que tienes acceso al curso.');
+        toast.error('Error al publicar. Verifica que tienes acceso al curso.');
       }
     } catch (error) {
       console.error(error);

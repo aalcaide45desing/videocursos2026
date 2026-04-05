@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { X, Check } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface Lesson {
   id: string;
@@ -45,15 +46,16 @@ export function EditLessonModal({ lesson, onClose, onUpdated }: EditLessonModalP
 
       if (res.ok) {
         const updatedLesson = await res.json();
+        toast.success('Lección actualizada correctamente');
         onUpdated(updatedLesson);
         onClose();
       } else {
         const err = await res.text();
-        alert('Error: ' + err);
+        toast.error('Error: ' + err);
       }
     } catch (error) {
       console.error(error);
-      alert('Error en el servidor. Verifica la consola.');
+      toast.error('Error en el servidor al actualizar la lección.');
     } finally {
       setLoading(false);
     }

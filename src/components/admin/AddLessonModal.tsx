@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { X, Loader2, Eye, EyeOff } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface AddLessonModalProps {
   courseId: string;
@@ -42,14 +43,18 @@ export function AddLessonModal({ courseId, nextOrder, onClose, onAdded }: AddLes
       });
 
       if (!res.ok) {
-        setError(await res.text());
+        const errorText = await res.text();
+        setError(errorText);
+        toast.error('Error: ' + errorText);
         return;
       }
       const lesson = await res.json();
+      toast.success('Lección añadida correctamente');
       onAdded(lesson);
       onClose();
     } catch {
       setError('Error de red, inténtalo de nuevo.');
+      toast.error('Error de red, inténtalo de nuevo.');
     } finally {
       setLoading(false);
     }

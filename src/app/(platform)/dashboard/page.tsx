@@ -1,7 +1,7 @@
 import { db } from '@/db';
 import { userCourseAccess } from '@/db/schema';
 import { eq } from 'drizzle-orm';
-import { requireAuth } from '@/lib/auth';
+import { requireAuth, isAdmin } from '@/lib/auth';
 import { UserButton } from '@clerk/nextjs';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -13,6 +13,7 @@ export const metadata = {
 
 export default async function StudentDashboardPage() {
   const { userId } = await requireAuth();
+  const isUserAdmin = await isAdmin();
 
   // Buscar todos los accesos a cursos de este usuario con la info del curso cargada
   const myAccesses = await db.query.userCourseAccess.findMany({
@@ -49,16 +50,29 @@ export default async function StudentDashboardPage() {
         </div>
 
         {myAccesses.length === 0 ? (
-          <div className="bg-gray-900/40 border border-gray-800 rounded-3xl p-16 text-center">
-            <Library className="w-16 h-16 text-gray-700 mx-auto mb-6" />
-            <h3 className="text-2xl font-bold text-white mb-2">Aún no tienes cursos</h3>
-            <p className="text-gray-400 max-w-md mx-auto mb-8">
-              Tu biblioteca está vacía. Es el momento perfecto para visitar el catálogo y apuntarte a tu primera formación premium.
-            </p>
-            <Link href="/cursos" className="bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 px-8 rounded-xl transition-all shadow-lg inline-flex items-center gap-2">
-              Ir al Catálogo
-            </Link>
-          </div>
+          isUserAdmin ? (
+            <div className="bg-gray-900/40 border border-gray-800 rounded-3xl p-16 text-center">
+              <Library className="w-16 h-16 text-amber-500 mx-auto mb-6" />
+              <h3 className="text-2xl font-bold text-white mb-2">Panel de Creador</h3>
+              <p className="text-gray-400 max-w-md mx-auto mb-8">
+                Eres un administrador de la academia. Visita el Panel de Administración para crear, editar y gestionar los cursos y lecciones.
+              </p>
+              <Link href="/admin" className="bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 px-8 rounded-xl transition-all shadow-lg inline-flex items-center gap-2">
+                Abrir Admin Panel
+              </Link>
+            </div>
+          ) : (
+            <div className="bg-gray-900/40 border border-gray-800 rounded-3xl p-16 text-center">
+              <Library className="w-16 h-16 text-gray-700 mx-auto mb-6" />
+              <h3 className="text-2xl font-bold text-white mb-2">Aún no tienes cursos</h3>
+              <p className="text-gray-400 max-w-md mx-auto mb-8">
+                Tu biblioteca está vacía. Es el momento perfecto para visitar el catálogo y apuntarte a tu primera formación premium.
+              </p>
+              <Link href="/cursos" className="bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 px-8 rounded-xl transition-all shadow-lg inline-flex items-center gap-2">
+                Ir al Catálogo
+              </Link>
+            </div>
+          )
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {myAccesses.map((access) => {

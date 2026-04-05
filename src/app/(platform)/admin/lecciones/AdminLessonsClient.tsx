@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { ListVideo, GripVertical, Plus, Trash2, Pencil, Play } from 'lucide-react';
 import Link from 'next/link';
@@ -32,6 +32,10 @@ export function AdminLessonsClient({ allCourses, activeCourseId, initialLessons 
   const [lessons, setLessons] = useState<Lesson[]>(initialLessons);
   const [showModal, setShowModal] = useState(false);
   const [editingLesson, setEditingLesson] = useState<Lesson | null>(null);
+
+  useEffect(() => {
+    setLessons(initialLessons);
+  }, [initialLessons]);
 
   const handleLessonAdded = (lesson: Lesson) => {
     setLessons((prev) => [...prev, lesson].sort((a, b) => a.order - b.order));
@@ -142,7 +146,7 @@ export function AdminLessonsClient({ allCourses, activeCourseId, initialLessons 
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                      <div className="flex items-center gap-1 opacity-100 transition-all">
                         <Link
                           href={`/play/${lesson.id}`}
                           className="p-2 text-gray-600 hover:text-blue-400 hover:bg-blue-400/10 rounded-lg transition-colors"

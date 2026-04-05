@@ -23,6 +23,9 @@ export async function Navbar() {
 
         {/* Navegación central */}
         <div className="flex items-center gap-6">
+          <Link href="/" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">
+            Inicio
+          </Link>
           <Link href="/cursos" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">
             Catálogo
           </Link>
