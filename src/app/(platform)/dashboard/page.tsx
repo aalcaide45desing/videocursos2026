@@ -1,11 +1,11 @@
 import { db } from '@/db';
 import { userCourseAccess } from '@/db/schema';
 import { eq } from 'drizzle-orm';
-import { requireAuth, isAdmin } from '@/lib/auth';
+import { requireAuth, isAdmin, isProfesor } from '@/lib/auth';
 import { UserButton } from '@clerk/nextjs';
 import Link from 'next/link';
 import Image from 'next/image';
-import { PlayCircle, Library } from 'lucide-react';
+import { PlayCircle, Library, Settings2 } from 'lucide-react';
 
 export const metadata = {
   title: 'Mi Panel de Alumno | Videocursos 2026',
@@ -14,6 +14,7 @@ export const metadata = {
 export default async function StudentDashboardPage() {
   const { userId } = await requireAuth();
   const isUserAdmin = await isAdmin();
+  const isUserProfesor = await isProfesor();
 
   // Buscar todos los accesos a cursos de este usuario con la info del curso cargada
   const myAccesses = await db.query.userCourseAccess.findMany({
@@ -33,6 +34,11 @@ export default async function StudentDashboardPage() {
              <span className="font-bold text-lg text-white">Mi Academia</span>
           </div>
           <div className="flex items-center gap-6">
+            {(isUserAdmin || isUserProfesor) && (
+              <Link href="/admin" className="text-sm font-bold text-amber-500 hover:text-amber-400 flex items-center gap-2 bg-amber-500/10 px-3 py-1.5 rounded-lg border border-amber-500/20 transition-colors">
+                <Settings2 className="w-4 h-4" /> Panel de Creador
+              </Link>
+            )}
             <Link href="/cursos" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">
               Explorar más cursos
             </Link>

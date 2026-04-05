@@ -4,10 +4,16 @@ import { desc } from 'drizzle-orm';
 import { Video, Plus, Settings2, EyeOff, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { getDbUser } from '@/lib/auth';
+import { currentUser } from '@clerk/nextjs/server';
+import { eq } from 'drizzle-orm';
 
 export default async function AdminCoursesPage() {
-  // Sacar todos los cursos ordenados por el más reciente
+  const user = await currentUser();
+  const dbUser = await getDbUser(user!.id);
+
   const allCourses = await db.query.courses.findMany({
+    where: dbUser?.role === 'profesor' ? eq(courses.instructorId, user!.id) : undefined,
     orderBy: [desc(courses.createdAt)],
   });
 

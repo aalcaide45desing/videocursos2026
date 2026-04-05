@@ -1,9 +1,97 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useUser } from '@clerk/nextjs';
-import Hls from 'hls.js';
-import { Settings } from 'lucide-react';
+import { Pencil, Settings } from 'lucide-react';
+import { toast } from 'sonner';
+import '@vidstack/react/player/styles/default/theme.css';
+import '@vidstack/react/player/styles/default/layouts/video.css';
+import { 
+  MediaPlayer, 
+  MediaProvider, 
+  Track, 
+  MediaPlayerInstance,
+  Menu,
+  usePlaybackRateOptions,
+  useVideoQualityOptions,
+  Tooltip
+} from '@vidstack/react';
+import { defaultLayoutIcons, DefaultVideoLayout } from '@vidstack/react/player/layouts/default';
+
+// Componente para el menú de velocidad custom
+function SpeedSelector() {
+  const options = usePlaybackRateOptions();
+  const hint = options.selectedValue === '1' ? 'x1.0' : `x${options.selectedValue}`;
+
+  return (
+    <Menu.Root>
+      <Menu.Button 
+        disabled={options.disabled} 
+        aria-label="Velocidad" 
+        className="vds-button flex items-center justify-center px-3 py-1 mx-2 text-sm font-semibold hover:bg-white/20 rounded transition-colors text-white"
+      >
+        {hint}
+      </Menu.Button>
+      
+      <Menu.Content className="vds-menu-items bg-black/95 backdrop-blur-md border border-gray-800 rounded-lg shadow-xl p-2 min-w-[120px] mb-2 transform -translate-y-2 !bottom-full" placement="top">
+        <Menu.RadioGroup value={options.selectedValue}>
+          {[0.5, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0].map((rate) => {
+            const valStr = rate.toString();
+            return (
+              <Menu.Radio 
+                value={valStr} 
+                onSelect={() => {
+                  const optArray = Array.from(options as any);
+                  const opt = optArray.find((o: any) => o.value === valStr) as any;
+                  if (opt) opt.select();
+                }} 
+                key={valStr}
+                className={`flex items-center px-3 py-1.5 rounded cursor-pointer hover:bg-purple-600/50 transition-colors text-sm ${options.selectedValue === valStr ? 'bg-purple-600 text-white font-bold' : '!text-white opacity-80'}`}
+              >
+                <div className="flex-1">{rate.toFixed(2)}x</div>
+                {options.selectedValue === valStr && <span className="text-white text-xs">✓</span>}
+              </Menu.Radio>
+            );
+          })}
+        </Menu.RadioGroup>
+      </Menu.Content>
+    </Menu.Root>
+  );
+}
+
+// Componente para la Calidad Exclusiva
+function QualitySelector() {
+  const options = useVideoQualityOptions({ auto: true, sort: 'descending' });
+  const hint = options.selectedValue !== 'auto' && options.selectedQuality?.height 
+    ? `${options.selectedQuality.height}p` 
+    : 'Auto';
+
+  return (
+    <Menu.Root>
+      <Menu.Button className="vds-button flex items-center justify-center p-2 rounded-md hover:bg-white/20 transition-colors mx-1 text-white" aria-label="Calidad">
+        <Settings className="w-[1.25rem] h-[1.25rem] drop-shadow-md" />
+      </Menu.Button>
+      <Menu.Content className="vds-menu-items bg-black/95 backdrop-blur-md border border-gray-800 rounded-lg shadow-xl p-2 min-w-[120px] mb-2 transform -translate-y-2 !bottom-full" placement="top">
+        <Menu.RadioGroup value={options.selectedValue}>
+          {Array.from(options as any).map((item: any) => {
+            const displayLabel = item.label === 'Auto' ? 'Automático' : item.label;
+            return (
+              <Menu.Radio 
+                value={item.value} 
+                onSelect={item.select} 
+                key={item.value}
+                className={`flex items-center px-3 py-1.5 rounded cursor-pointer hover:bg-purple-600/50 transition-colors text-sm ${options.selectedValue === item.value ? 'bg-purple-600 text-white font-bold' : '!text-white opacity-80'}`}
+              >
+                <div className="flex-1">{displayLabel}</div>
+                {options.selectedValue === item.value && <span className="text-white text-xs">✓</span>}
+              </Menu.Radio>
+            );
+          })}
+        </Menu.RadioGroup>
+      </Menu.Content>
+    </Menu.Root>
+  );
+}
 
 interface LessonPlayerProps {
   lessonId: string;
@@ -12,6 +100,8 @@ interface LessonPlayerProps {
   thumbnailUrl?: string | null;
   onTimeUpdateCallback?: (currentTime: number) => void;
   langSubtitles?: { es?: string; en?: string };
+  onAddNoteRequest?: (currentTime: number) => void;
+  children?: React.ReactNode;
 }
 
 export function LessonPlayer({
@@ -21,143 +111,50 @@ export function LessonPlayer({
   thumbnailUrl,
   langSubtitles,
   onTimeUpdateCallback,
+  onAddNoteRequest,
+  children,
 }: LessonPlayerProps) {
   const { user } = useUser();
-  const videoRef = useRef<HTMLVideoElement>(null);
   const [mounted, setMounted] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const lastSyncRef = useRef<number>(initialLastPositionSecs);
-  const hlsRef = useRef<Hls | null>(null);
-
-  // Estados para la selección de calidad
-  const [levels, setLevels] = useState<{ id: number; height: number; bitrate: number }[]>([]);
-  const [currentLevelIndex, setCurrentLevelIndex] = useState<number>(-1); // -1 es Auto
-  const [showQualityMenu, setShowQualityMenu] = useState(false);
+  const playerRef = useRef<MediaPlayerInstance>(null);
+  const lastSyncRef = useRef<number>(0);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  useEffect(() => {
-    if (!mounted || !videoRef.current) return;
+  const handleTimeUpdate = (time: number) => {
+    if (onTimeUpdateCallback) onTimeUpdateCallback(time);
 
-    setError(null);
-    const video = videoRef.current;
-    const src = `/api/video/manifest?lessonId=${lessonId}`;
-
-    if (Hls.isSupported()) {
-      if (hlsRef.current) {
-        hlsRef.current.destroy();
-      }
-
-      const hls = new Hls({
-        xhrSetup: (xhr, url) => {
-          if (url.includes('/api/video/')) {
-            xhr.withCredentials = true;
-          }
-        },
-        manifestLoadingMaxRetry: 3,
-        fragLoadingMaxRetry: 3,
-        fragLoadingRetryDelay: 1000,
-      });
-
-      hls.loadSource(src);
-      hls.attachMedia(video);
-
-      hls.on(Hls.Events.MANIFEST_PARSED, (event, data) => {
-        if (initialLastPositionSecs > 0 && video) {
-          video.currentTime = initialLastPositionSecs;
-        }
-        
-        // Guardar las calidades detectadas (ej. 1080, 720, 480)
-        const availableLevels = data.levels.map((level, i) => ({
-          id: i,
-          height: level.height,
-          bitrate: level.bitrate,
-        })).sort((a, b) => b.height - a.height); // Ordenar de mayor a menor calidad
-        
-        setLevels(availableLevels);
-        setCurrentLevelIndex(hls.currentLevel);
-      });
-
-      // Escuchar cuando HLS cambia de nivel automáticamente
-      hls.on(Hls.Events.LEVEL_SWITCHED, (event, data) => {
-        if (hls.autoLevelEnabled) {
-          // Si está en auto, el currentLevelIndex reflejará -1 para la UI
-          setCurrentLevelIndex(-1);
-        } else {
-          setCurrentLevelIndex(data.level);
-        }
-      });
-
-      hls.on(Hls.Events.ERROR, (_event, data) => {
-        if (data.fatal) {
-          switch (data.type) {
-            case Hls.ErrorTypes.NETWORK_ERROR:
-              setError(`Error de red al cargar el vídeo: ${data.details}`);
-              hls.startLoad(); 
-              break;
-            case Hls.ErrorTypes.MEDIA_ERROR:
-              setError(`Error de media: ${data.details}`);
-              hls.recoverMediaError();
-              break;
-            default:
-              setError(`Error fatal: ${data.details}`);
-              hls.destroy();
-              break;
-          }
-        }
-      });
-
-      hlsRef.current = hls;
-
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      // Safari (iOS) delega la calidad al sistema operativo nativamente
-      video.src = src;
-      video.addEventListener('loadedmetadata', () => {
-        if (initialLastPositionSecs > 0) {
-          video.currentTime = initialLastPositionSecs;
-        }
-      });
-    } else {
-      setError('Tu navegador no soporta reproducción de vídeo HLS.');
-    }
-
-    return () => {
-      if (hlsRef.current) {
-        hlsRef.current.destroy();
-        hlsRef.current = null;
-      }
-    };
-  }, [mounted, lessonId, initialLastPositionSecs]);
-
-  const handleTimeUpdate = useCallback(() => {
-    if (!videoRef.current) return;
-    const currentTime = videoRef.current.currentTime;
-
-    if (onTimeUpdateCallback) {
-      onTimeUpdateCallback(currentTime);
-    }
-
-    if (Math.abs(currentTime - lastSyncRef.current) > 15) {
-      lastSyncRef.current = currentTime;
+    if (Math.abs(time - lastSyncRef.current) > 15) {
+      lastSyncRef.current = time;
       fetch('/api/progress', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           lessonId,
-          lastPositionSeconds: Math.floor(currentTime),
-          completed: durationSeconds ? currentTime >= durationSeconds * 0.9 : false,
+          lastPositionSeconds: Math.floor(time),
+          completed: durationSeconds ? time >= durationSeconds * 0.9 : false,
         }),
       }).catch(console.error);
     }
-  }, [lessonId, durationSeconds, onTimeUpdateCallback]);
+  };
 
-  const changeLevel = (index: number) => {
-    if (hlsRef.current) {
-      hlsRef.current.currentLevel = index; // -1 significa Auto
-      setCurrentLevelIndex(index);
-      setShowQualityMenu(false);
+  useEffect(() => {
+    if (initialLastPositionSecs > 0 && playerRef.current) {
+      playerRef.current.currentTime = initialLastPositionSecs;
+    }
+  }, [initialLastPositionSecs]);
+
+  const handleFloatingNoteClick = (e?: React.SyntheticEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    if (playerRef.current) {
+      playerRef.current.pause();
+      if (onAddNoteRequest) onAddNoteRequest(playerRef.current.currentTime);
+      else toast.info('Añadiendo nota...');
     }
   };
 
@@ -168,90 +165,76 @@ export function LessonPlayer({
     left: `${Math.floor(Math.random() * 70)}%`,
   };
 
+  const src = `/api/video/manifest?lessonId=${lessonId}`;
+
+  const PencilButton = () => (
+    <button
+      type="button"
+      onPointerDown={(e) => e.stopPropagation()}
+      onPointerUp={handleFloatingNoteClick}
+      onClick={handleFloatingNoteClick}
+      className="vds-button flex items-center justify-center p-2 rounded-md hover:bg-white/20 transition-colors mx-1"
+      aria-label="Tomar Nota"
+      title="Añadir nota en este segundo"
+    >
+      <Pencil className="w-[1.125rem] h-[1.125rem] text-purple-400 drop-shadow-md hover:scale-110 transition-transform" />
+    </button>
+  );
+
   return (
-    <div className="relative w-full overflow-hidden rounded-xl border border-gray-800 shadow-2xl bg-black group">
-      {/* Marca de agua anti-piratería */}
-      {user?.emailAddresses[0] && (
-        <div
-          className="pointer-events-none absolute z-40 text-white/5 font-mono text-sm tracking-widest break-all select-none transition-all duration-[60000ms]"
-          style={randomPositionCSS}
-        >
-          {user.emailAddresses[0].emailAddress}
-        </div>
-      )}
-
-      {/* Menú de Calidad (HLS.js) */}
-      {levels.length > 0 && Hls.isSupported() && (
-        <div className="absolute top-4 right-4 z-50">
-          <div className="relative">
-            <button
-              onClick={() => setShowQualityMenu(!showQualityMenu)}
-              className="p-2 bg-black/60 hover:bg-black/80 backdrop-blur-sm text-white rounded-full transition-all opacity-0 group-hover:opacity-100 focus:opacity-100"
-              title="Calidad de Vídeo"
-            >
-              <Settings className="w-5 h-5" />
-            </button>
-            
-            {showQualityMenu && (
-              <div className="absolute right-0 mt-2 w-36 bg-black/90 backdrop-blur-md rounded-lg shadow-xl border border-gray-700 py-1 overflow-hidden">
-                <button
-                  onClick={() => changeLevel(-1)}
-                  className={`w-full text-left px-4 py-2 text-sm transition-colors ${
-                    currentLevelIndex === -1 ? 'bg-purple-600/30 text-purple-400 font-semibold' : 'text-gray-300 hover:bg-white/10'
-                  }`}
-                >
-                  Automático
-                </button>
-                {levels.map((level) => (
-                  <button
-                    key={level.id}
-                    onClick={() => changeLevel(level.id)}
-                    className={`w-full text-left px-4 py-2 text-sm transition-colors ${
-                      currentLevelIndex === level.id ? 'bg-purple-600/30 text-purple-400 font-semibold' : 'text-gray-300 hover:bg-white/10'
-                    }`}
-                  >
-                    {level.height}p
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Panel de error visible */}
-      {error && (
-        <div className="absolute inset-0 z-40 flex flex-col items-center justify-center bg-black/80 p-6 text-center">
-          <div className="text-red-400 text-4xl mb-3">⚠️</div>
-          <p className="text-red-300 font-semibold text-sm mb-1">Error al cargar el vídeo</p>
-          <p className="text-gray-500 text-xs font-mono max-w-sm">{error}</p>
-          <button
-            onClick={() => { setError(null); hlsRef.current?.startLoad(); }}
-            className="mt-4 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-xs rounded-lg transition-colors"
-          >
-            Reintentar
-          </button>
-        </div>
-      )}
-
-      {/* Reproductor nativo HTML5 + hls.js */}
-      <video
-        ref={videoRef}
-        controls
+    <div className="relative w-full overflow-hidden rounded-xl border border-gray-800 shadow-2xl bg-black group font-sans custom-player-wrapper">
+      <MediaPlayer
+        ref={playerRef}
+        title=""
+        src={src}
+        crossOrigin
         playsInline
-        crossOrigin="anonymous"
         poster={thumbnailUrl || undefined}
-        onTimeUpdate={handleTimeUpdate}
+        onTimeUpdate={(e) => handleTimeUpdate(e.currentTime)}
         className="w-full h-full aspect-video outline-none"
-        style={{ backgroundColor: 'black' }}
       >
-        {langSubtitles?.es && (
-          <track src={langSubtitles.es} kind="subtitles" label="Español" srcLang="es" default />
+        <MediaProvider>
+          {langSubtitles?.es && <Track src={langSubtitles.es} kind="subtitles" label="Español" lang="es" default />}
+          {langSubtitles?.en && <Track src={langSubtitles.en} kind="subtitles" label="Inglés" lang="en" />}
+        </MediaProvider>
+
+        {user?.emailAddresses[0] && (
+          <div
+            className="pointer-events-none absolute z-[60] text-white/5 font-mono text-sm tracking-widest break-all select-none transition-all duration-[60000ms]"
+            style={randomPositionCSS}
+          >
+            {user.emailAddresses[0].emailAddress}
+          </div>
         )}
-        {langSubtitles?.en && (
-          <track src={langSubtitles.en} kind="subtitles" label="Inglés" srcLang="en" />
-        )}
-      </video>
+
+        <DefaultVideoLayout 
+          icons={defaultLayoutIcons} 
+          slots={{
+            afterTitle: <SpeedSelector />,
+            beforeSettingsMenu: <PencilButton />,
+            beforeFullscreenButton: <QualitySelector />
+          }}
+        />
+
+        {/* Instanciamos hijos (como el Modal de notas) DENTRO del player para soportar Pantalla Completa */}
+        {children}
+      </MediaPlayer>
+      
+      {/* Eliminamos el SettingsMenu por defecto. Usaremos nuestro QualitySelector.
+          También ocultamos botones de PIP y Google Cast como se requirió. */}
+      <style dangerouslySetInnerHTML={{__html: `
+        button[aria-label="Settings"],
+        button[aria-label="Configuración"],
+        button[aria-label*="Picture-in-Picture"],
+        button[aria-label*="PiP"],
+        button[aria-label*="Google Cast"],
+        button[aria-label*="AirPlay"],
+        .vds-pip-button,
+        .vds-google-cast-button,
+        .vds-airplay-button {
+           display: none !important;
+        }
+      `}} />
     </div>
   );
 }

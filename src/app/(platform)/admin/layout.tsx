@@ -1,22 +1,24 @@
 import { redirect } from 'next/navigation';
-import { isAdmin } from '@/lib/auth';
+import { getDbUser, isProfesor } from '@/lib/auth';
 import Link from 'next/link';
 import { LayoutDashboard, Video, Users, LogOut, ListOrdered, ExternalLink } from 'lucide-react';
 import { SignOutButton } from '@clerk/nextjs';
+import { currentUser } from '@clerk/nextjs/server';
 
 export default async function AdminLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  // 1. Barrera de Seguridad: Si no tiene el rol de admin en Clerk, a la calle.
-  // Para darte a ti mismo el rol, deberás ir al Dashboard de Clerk -> Users -> Edit
-  // Y poner en "public_metadata": {"role": "admin"}
-  const isUserAdmin = await isAdmin();
-  
-  if (!isUserAdmin) {
-    redirect('/'); // O a la pestaña de cursos si lo prefieres
+  // 1. Barrera de Seguridad: DB RBAC
+  const isProfOrAdmin = await isProfesor();
+  if (!isProfOrAdmin) {
+    redirect('/');
   }
+
+  const user = await currentUser();
+  const dbUser = user ? await getDbUser(user.id) : null;
+  const role = dbUser?.role || 'registrado';
 
   return (
     <div className="flex h-screen bg-gray-950 text-white font-sans overflow-hidden">
@@ -44,10 +46,19 @@ export default async function AdminLayout({
             <ListOrdered className="w-5 h-5 text-blue-300" />
             <span className="font-medium">Lecciones</span>
           </Link>
-          <Link href="/admin/accesos" className="flex items-center gap-3 px-4 py-3 text-gray-300 hover:text-white hover:bg-gray-800 rounded-xl transition-all">
-            <Users className="w-5 h-5 text-green-400" />
-            <span className="font-medium">Accesos y Seguridad</span>
-          </Link>
+          
+          {role === 'admin' && (
+            <>
+              <Link href="/admin/accesos" className="flex items-center gap-3 px-4 py-3 text-gray-300 hover:text-white hover:bg-gray-800 rounded-xl transition-all">
+                <Users className="w-5 h-5 text-green-400" />
+                <span className="font-medium">Accesos a Cursos</span>
+              </Link>
+              <Link href="/admin/users" className="flex items-center gap-3 px-4 py-3 text-gray-300 hover:text-white hover:bg-gray-800 rounded-xl transition-all">
+                <Users className="w-5 h-5 text-orange-400" />
+                <span className="font-medium">Usuarios y Roles</span>
+              </Link>
+            </>
+          )}
           <div className="pt-4 mt-4 border-t border-gray-800">
             <Link href="/" className="flex items-center gap-3 px-4 py-3 text-yellow-300 hover:text-yellow-200 hover:bg-yellow-900/20 rounded-xl transition-all">
               <ExternalLink className="w-5 h-5" />

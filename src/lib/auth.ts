@@ -1,6 +1,7 @@
 import { auth, currentUser } from '@clerk/nextjs/server';
 import { db } from '@/db';
 import { users } from '@/db/schema';
+import { eq } from 'drizzle-orm';
 
 /**
  * Obtiene el userId autenticado. Lanza error si no hay sesión.
@@ -31,6 +32,7 @@ export async function syncClerkUser(clerkUserId: string) {
       firstName: clerkUser.firstName,
       lastName: clerkUser.lastName,
       avatarUrl: clerkUser.imageUrl,
+      role: 'registrado', // Default role
     })
     .onConflictDoUpdate({
       target: users.id,
@@ -45,10 +47,33 @@ export async function syncClerkUser(clerkUserId: string) {
 }
 
 /**
- * Comprueba si el usuario autenticado tiene el rol 'admin'
- * (via Clerk publicMetadata.role).
+ * Obtiene el registro completo del usuario desde la base de datos.
+ */
+export async function getDbUser(userId: string) {
+  const [user] = await db.select().from(users).where(eq(users.id, userId));
+  return user || null;
+}
+
+/**
+ * Comprueba si el usuario autenticado tiene el rol 'admin' en la base de datos (o fallback Clerk).
  */
 export async function isAdmin(): Promise<boolean> {
   const user = await currentUser();
-  return user?.publicMetadata?.role === 'admin';
+  if (!user) return false;
+  if (user.publicMetadata?.role === 'admin') return true;
+
+  const dbUser = await getDbUser(user.id);
+  return dbUser?.role === 'admin';
+}
+
+/**
+ * Comprueba si el usuario autenticado tiene el rol 'profesor' o 'admin' en la base de datos.
+ */
+export async function isProfesor(): Promise<boolean> {
+  const user = await currentUser();
+  if (!user) return false;
+  if (user.publicMetadata?.role === 'admin' || user.publicMetadata?.role === 'profesor') return true;
+
+  const dbUser = await getDbUser(user.id);
+  return dbUser?.role === 'admin' || dbUser?.role === 'profesor';
 }

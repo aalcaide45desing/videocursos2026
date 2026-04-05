@@ -1,15 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { courses } from '@/db/schema';
-import { isAdmin } from '@/lib/auth';
-import { eq } from 'drizzle-orm';
+import { isProfesor, getDbUser } from '@/lib/auth';
+import { eq, and } from 'drizzle-orm';
+import { currentUser } from '@clerk/nextjs/server';
 
-// POST /api/admin/courses — crear nuevo curso
 export async function POST(req: NextRequest) {
-  const admin = await isAdmin();
-  if (!admin) return new NextResponse('Forbidden', { status: 403 });
+  const isProfOrAdmin = await isProfesor();
+  if (!isProfOrAdmin) return new NextResponse('Forbidden', { status: 403 });
 
   try {
+    const user = await currentUser();
+    const dbUser = await getDbUser(user!.id);
+    
     const body = await req.json();
     const { title, description, price, thumbnailUrl, checkoutUrl, isPublished } = body;
 
@@ -17,10 +20,9 @@ export async function POST(req: NextRequest) {
       return new NextResponse('El título es obligatorio', { status: 400 });
     }
 
-    // Generar slug a partir del título
     const slug = title
       .toLowerCase()
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // quitar tildes
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
       .replace(/[^a-z0-9\s-]/g, '')
       .trim()
       .replace(/\s+/g, '-');
@@ -33,11 +35,11 @@ export async function POST(req: NextRequest) {
       thumbnailUrl: thumbnailUrl?.trim() || null,
       checkoutUrl: checkoutUrl?.trim() || null,
       isPublished: isPublished ?? false,
+      instructorId: user!.id,
     }).returning();
 
     return NextResponse.json(newCourse, { status: 201 });
   } catch (error: any) {
-    // El slug duplicado lanzaría un unique constraint error
     if (error?.code === '23505') {
       return new NextResponse('Ya existe un curso con ese título', { status: 409 });
     }
@@ -46,15 +48,23 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// PATCH /api/admin/courses/[id] — para edición futura
 export async function PATCH(req: NextRequest) {
-  const admin = await isAdmin();
-  if (!admin) return new NextResponse('Forbidden', { status: 403 });
+  const isProfOrAdmin = await isProfesor();
+  if (!isProfOrAdmin) return new NextResponse('Forbidden', { status: 403 });
 
   try {
+    const user = await currentUser();
+    const dbUser = await getDbUser(user!.id);
+    
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
     if (!id) return new NextResponse('ID requerido', { status: 400 });
+
+    // Validate ownership if professor
+    if (dbUser?.role === 'profesor') {
+      const [existing] = await db.select().from(courses).where(and(eq(courses.id, id), eq(courses.instructorId, user!.id)));
+      if (!existing) return new NextResponse('Forbidden: No eres el dueño de este curso', { status: 403 });
+    }
 
     const body = await req.json();
     const { title, description, price, thumbnailUrl, checkoutUrl, isPublished } = body;

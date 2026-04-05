@@ -2,88 +2,78 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth } from '@/lib/auth';
 import { db } from '@/db';
 import { privateNotes } from '@/db/schema';
-import { eq, and, asc } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 
 export async function GET(req: NextRequest) {
   try {
     const { userId } = await requireAuth();
     const lessonId = req.nextUrl.searchParams.get('lessonId');
 
-    if (!lessonId) {
-      return new NextResponse('El ID de la lección es obligatorio', { status: 400 });
-    }
+    if (!lessonId) return new NextResponse('Missing lessonId', { status: 400 });
 
-    // Las notas son 100% privadas. Solo sacamos las del usuario logueado.
-    // Ordenadas por el minuto en el que ocurren en el vídeo de menor a mayor.
     const notes = await db.query.privateNotes.findMany({
       where: and(
-        eq(privateNotes.lessonId, lessonId),
-        eq(privateNotes.userId, userId)
+        eq(privateNotes.userId, userId),
+        eq(privateNotes.lessonId, lessonId)
       ),
-      orderBy: [asc(privateNotes.timestampSeconds)],
+      orderBy: (notes, { asc }) => [asc(notes.timestampSeconds)],
     });
 
     return NextResponse.json(notes);
   } catch (error) {
-    if (error instanceof Error && error.message === 'No autenticado') {
-      return new NextResponse('No autenticado', { status: 401 });
-    }
-    console.error('[API_NOTES_GET]', error);
-    return new NextResponse('Error interno', { status: 500 });
+    return new NextResponse('Internal Error', { status: 500 });
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
     const { userId } = await requireAuth();
-    const body = await req.json();
-    const { lessonId, content, timestampSeconds } = body;
+    const { lessonId, content, timestampSeconds } = await req.json();
 
-    if (!lessonId || !content || timestampSeconds === undefined) {
-      return new NextResponse('Faltan campos obligatorios', { status: 400 });
-    }
+    if (!lessonId || !content) return new NextResponse('Missing fields', { status: 400 });
 
-    // Insertar la nota con su marca de tiempo exacta
-    const [newNote] = await db
-      .insert(privateNotes)
-      .values({
-        lessonId,
-        userId,
-        content,
-        timestampSeconds,
-      })
+    const [note] = await db.insert(privateNotes).values({
+      lessonId,
+      userId,
+      content,
+      timestampSeconds: timestampSeconds || 0,
+    }).returning();
+
+    return NextResponse.json(note, { status: 201 });
+  } catch (error) {
+    return new NextResponse('Internal Error', { status: 500 });
+  }
+}
+
+export async function PATCH(req: NextRequest) {
+  try {
+    const { userId } = await requireAuth();
+    const { id, content } = await req.json();
+
+    if (!id || !content) return new NextResponse('Missing fields', { status: 400 });
+
+    const [updated] = await db.update(privateNotes)
+      .set({ content })
+      .where(and(eq(privateNotes.id, id), eq(privateNotes.userId, userId)))
       .returning();
 
-    return NextResponse.json(newNote, { status: 201 });
+    return NextResponse.json(updated);
   } catch (error) {
-    if (error instanceof Error && error.message === 'No autenticado') {
-      return new NextResponse('No autenticado', { status: 401 });
-    }
-    console.error('[API_NOTES_POST]', error);
-    return new NextResponse('Error interno', { status: 500 });
+    return new NextResponse('Internal Error', { status: 500 });
   }
 }
 
 export async function DELETE(req: NextRequest) {
   try {
     const { userId } = await requireAuth();
-    const noteId = req.nextUrl.searchParams.get('id');
+    const id = req.nextUrl.searchParams.get('id');
 
-    if (!noteId) {
-      return new NextResponse('Falta el ID de la nota', { status: 400 });
-    }
+    if (!id) return new NextResponse('Missing id', { status: 400 });
 
-    // Borrar asegurándose de que la nota pertenezca a este usuario (seguridad extra)
-    await db
-      .delete(privateNotes)
-      .where(and(eq(privateNotes.id, noteId), eq(privateNotes.userId, userId)));
+    await db.delete(privateNotes).where(and(eq(privateNotes.id, id), eq(privateNotes.userId, userId)));
 
-    return new NextResponse('Nota borrada', { status: 200 });
+    return new NextResponse(null, { status: 204 });
   } catch (error) {
-    if (error instanceof Error && error.message === 'No autenticado') {
-      return new NextResponse('No autenticado', { status: 401 });
-    }
-    console.error('[API_NOTES_DELETE]', error);
-    return new NextResponse('Error interno', { status: 500 });
+    return new NextResponse('Internal Error', { status: 500 });
   }
 }

@@ -19,6 +19,7 @@ export const users = pgTable('users', {
   firstName: text('first_name'),
   lastName: text('last_name'),
   avatarUrl: text('avatar_url'),
+  role: text('role').notNull().default('registrado'), // 'admin', 'profesor', 'alumno', 'registrado'
   isSuspended: boolean('is_suspended').notNull().default(false),
   // Columnas para rate limiting anti-pirateria
   manifestRequestsCount: integer('manifest_requests_count').notNull().default(0),
@@ -32,6 +33,7 @@ export const users = pgTable('users', {
 // =============================================================================
 export const courses = pgTable('courses', {
   id: uuid('id').primaryKey().defaultRandom(),
+  instructorId: text('instructor_id').references(() => users.id, { onDelete: 'set null' }),
   title: text('title').notNull(),
   slug: text('slug').notNull().unique(),
   description: text('description').notNull().default(''),
@@ -89,6 +91,7 @@ export const lessonProgress = pgTable(
 // =============================================================================
 export const comments = pgTable('comments', {
   id: uuid('id').primaryKey().defaultRandom(),
+  parentId: uuid('parent_id'),
   lessonId: uuid('lesson_id')
     .notNull()
     .references(() => lessons.id, { onDelete: 'cascade' }),
@@ -96,7 +99,9 @@ export const comments = pgTable('comments', {
     .notNull()
     .references(() => users.id, { onDelete: 'cascade' }),
   content: text('content').notNull(),
+  status: text('status').notNull().default('pending'), // 'pending', 'approved', 'rejected'
   createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
 
 // =============================================================================
@@ -140,13 +145,15 @@ export const userCourseAccess = pgTable(
 // RELATIONS (Drizzle relational queries)
 // =============================================================================
 export const usersRelations = relations(users, ({ many }) => ({
+  coursesTaught: many(courses),
   courseAccess: many(userCourseAccess),
   lessonProgress: many(lessonProgress),
   comments: many(comments),
   privateNotes: many(privateNotes),
 }));
 
-export const coursesRelations = relations(courses, ({ many }) => ({
+export const coursesRelations = relations(courses, ({ one, many }) => ({
+  instructor: one(users, { fields: [courses.instructorId], references: [users.id] }),
   lessons: many(lessons),
   userAccess: many(userCourseAccess),
 }));
